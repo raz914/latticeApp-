@@ -2,11 +2,28 @@ import React, { useMemo, useRef, useEffect } from 'react';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
-const LatticePanel = ({ width, height, styleModel, materialColor }) => {
+const LatticePanel = ({ width, height, styleModel, materialColor, patternScale = 1 }) => {
     const groupRef = useRef();
 
     // Load the selected style model
     const { scene } = useGLTF(styleModel);
+
+    // Target dimensions in scene units.
+    const targetWidth = width / 10;
+    const targetHeight = height / 10;
+
+    // Clip to the requested panel rectangle after cover scaling.
+    const clippingPlanes = useMemo(() => {
+        const halfW = targetWidth / 2;
+        const halfH = targetHeight / 2;
+
+        return [
+            new THREE.Plane(new THREE.Vector3(1, 0, 0), halfW),
+            new THREE.Plane(new THREE.Vector3(-1, 0, 0), halfW),
+            new THREE.Plane(new THREE.Vector3(0, 1, 0), halfH),
+            new THREE.Plane(new THREE.Vector3(0, -1, 0), halfH)
+        ];
+    }, [targetWidth, targetHeight]);
 
     // Calculate bounding box and create tiled grid
     const tiledGroup = useMemo(() => {
@@ -35,19 +52,27 @@ const LatticePanel = ({ width, height, styleModel, materialColor }) => {
         const unitWidth = modelSize.x || 1;
         const unitHeight = modelSize.y || 1;
 
-        // Target dimensions in scene units
-        const targetWidth = width / 10;
-        const targetHeight = height / 10;
+        // Calculate tiles needed with scale adjustment
+        // Larger patternScale -> Larger tiles -> Fewer tiles needed
+        const tilesX = Math.max(1, Math.ceil(targetWidth / (unitWidth * patternScale)));
+        const tilesY = Math.max(1, Math.ceil(targetHeight / (unitHeight * patternScale)));
 
-        // Calculate tiles needed
-        const tilesX = Math.max(1, Math.ceil(targetWidth / unitWidth));
-        const tilesY = Math.max(1, Math.ceil(targetHeight / unitHeight));
-
-        // Calculate scale to fit exactly
-        const actualWidth = tilesX * unitWidth;
+        // Use cover fit with a single scalar so XY proportions are always preserved.
+        const actualWidth = tilesX * unitWidth; // Note: actualWidth of the GRID (unscaled)
         const actualHeight = tilesY * unitHeight;
+
+        // We want the grid (which is tilesX * unitWidth) to be scaled up/down to cover targetWidth.
+        // But we ALSO want to respect the user's requested scale relative to the target.
+        // Wait, the previous logic: scaleX = targetWidth / actualWidth.
+        // If we decrease tilesX (due to higher patternScale), actualWidth decreases.
+        // Then scaleX increases. So the whole group gets scaled up.
+        // This naturally achieves the "bigger pattern" effect.
+
         const scaleX = targetWidth / actualWidth;
         const scaleY = targetHeight / actualHeight;
+        // In the original code, uniformScale was Math.max(scaleX, scaleY) to cover completely.
+        // If we reduced tilesX based on patternScale, scaleX will be roughly `patternScale`.
+        const uniformScale = Math.max(scaleX, scaleY);
 
         // Create the tiled grid
         for (let x = 0; x < tilesX; x++) {
@@ -70,11 +95,11 @@ const LatticePanel = ({ width, height, styleModel, materialColor }) => {
         // Center the group
         group.position.set(0, 0, 0);
 
-        // Apply scale to fit target dimensions
-        group.scale.set(scaleX, scaleY, 1);
+        // Apply a uniform scale to avoid stretching.
+        group.scale.set(uniformScale, uniformScale, 1);
 
         return group;
-    }, [scene, width, height]);
+    }, [scene, targetWidth, targetHeight, patternScale]);
 
     // Apply material color to all meshes using PBR material
     useEffect(() => {
@@ -87,12 +112,14 @@ const LatticePanel = ({ width, height, styleModel, materialColor }) => {
                         metalness: 0,
                         roughness: 0.8,
                         side: THREE.DoubleSide,
-                        envMapIntensity: 1.0
+                        envMapIntensity: 1.0,
+                        clippingPlanes,
+                        clipShadows: true
                     });
                 }
             });
         }
-    }, [materialColor, tiledGroup]);
+    }, [materialColor, tiledGroup, clippingPlanes]);
 
     return (
         <group ref={groupRef}>
@@ -103,4 +130,3 @@ const LatticePanel = ({ width, height, styleModel, materialColor }) => {
 
 
 export default LatticePanel;
-

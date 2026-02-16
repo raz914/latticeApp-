@@ -32,20 +32,74 @@ const Section = ({ title, icon: Icon, children, isOpen = true }) => {
     );
 };
 
-const InputGroup = ({ label, value, onChange, unit }) => (
-    <div className="flex flex-col">
-        <label className="text-xs font-bold text-gray-500 mb-1 uppercase">{label}</label>
-        <div className="relative flex items-center">
-            <input
-                type="number"
-                value={value}
-                onChange={(e) => onChange(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-            />
-            {unit && <span className="absolute right-3 text-gray-400 text-xs">{unit}</span>}
+const InputGroup = ({
+    label,
+    value,
+    onChange,
+    unit,
+    step = 1,
+    min = 0,
+    showStepper = false,
+}) => {
+    const handleInputChange = (e) => {
+        const nextValue = Number(e.target.value);
+        if (Number.isNaN(nextValue)) return;
+        onChange(nextValue);
+    };
+
+    const handleBlur = () => {
+        if (value < min) {
+            onChange(min);
+        }
+    };
+
+    const adjustValue = (delta) => {
+        const baseValue = Number.isFinite(value) ? value : min;
+        onChange(Math.max(min, baseValue + delta));
+    };
+
+    return (
+        <div className="flex flex-col">
+            <label className="text-xs font-bold text-gray-500 mb-1 uppercase">{label}</label>
+            <div className="relative flex items-center">
+                <input
+                    type="number"
+                    value={value}
+                    min={min}
+                    step={step}
+                    onChange={handleInputChange}
+                    onBlur={handleBlur}
+                    className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${showStepper ? 'pr-16' : ''}`}
+                />
+                {unit && (
+                    <span className={`absolute text-gray-400 text-xs ${showStepper ? 'right-10' : 'right-3'}`}>
+                        {unit}
+                    </span>
+                )}
+                {showStepper && (
+                    <div className="absolute right-0 top-0 h-full w-8 border-l border-gray-200 flex flex-col">
+                        <button
+                            type="button"
+                            onClick={() => adjustValue(step)}
+                            className="flex-1 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                            aria-label={`Increase ${label}`}
+                        >
+                            <ChevronUp size={12} className="text-gray-500" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => adjustValue(-step)}
+                            className="flex-1 flex items-center justify-center border-t border-gray-200 hover:bg-gray-100 transition-colors"
+                            aria-label={`Decrease ${label}`}
+                        >
+                            <ChevronDown size={12} className="text-gray-500" />
+                        </button>
+                    </div>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 // Style model button for selecting lattice patterns
 const StyleButton = ({ name, path, active, onClick }) => (
@@ -134,6 +188,7 @@ function LatticeCreator() {
     const [thickness, setThickness] = useState(0.25);
     const [borderSize, setBorderSize] = useState(1.5);
     const [hangingOption, setHangingOption] = useState('None');
+    const [patternScale, setPatternScale] = useState(1);
     const [styles, setStyles] = useState([]);
 
     // Fetch style config
@@ -180,8 +235,24 @@ function LatticeCreator() {
 
                         <Section title="Dimensions & Shape" icon={Ruler}>
                             <div className="grid grid-cols-2 gap-4">
-                                <InputGroup label="Width" value={width} onChange={setWidth} unit="inch" />
-                                <InputGroup label="Height" value={height} onChange={setHeight} unit="inch" />
+                                <InputGroup
+                                    label="Width"
+                                    value={width}
+                                    onChange={setWidth}
+                                    unit="inch"
+                                    step={10}
+                                    min={10}
+                                    showStepper
+                                />
+                                <InputGroup
+                                    label="Height"
+                                    value={height}
+                                    onChange={setHeight}
+                                    unit="inch"
+                                    step={10}
+                                    min={10}
+                                    showStepper
+                                />
                             </div>
                             <div className="mt-4">
                                 <label className="text-xs font-bold text-gray-500 mb-1 uppercase block">Shape</label>
@@ -216,6 +287,8 @@ function LatticeCreator() {
                                     min="0.5"
                                     max="2"
                                     step="0.1"
+                                    value={patternScale}
+                                    onChange={(e) => setPatternScale(parseFloat(e.target.value))}
                                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                                 />
                             </div>
@@ -303,7 +376,12 @@ function LatticeCreator() {
                     </div>
 
                     <div className="w-full h-full cursor-move">
-                        <Canvas camera={{ position: [0, 0, 15], fov: 50 }}>
+                        <Canvas
+                            camera={{ position: [0, 0, 15], fov: 50 }}
+                            onCreated={({ gl }) => {
+                                gl.localClippingEnabled = true;
+                            }}
+                        >
                             <color attach="background" args={['#e8e8e8']} />
 
                             {/* HDR Environment for realistic lighting - reduced intensity */}
@@ -320,6 +398,7 @@ function LatticeCreator() {
                                     height={height}
                                     styleModel={selectedStyle}
                                     materialColor={finish}
+                                    patternScale={patternScale}
                                 />
                             </Suspense>
 
