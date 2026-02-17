@@ -189,6 +189,7 @@ function LatticeCreator() {
     const [borderSize, setBorderSize] = useState(1.5);
     const [hangingOption, setHangingOption] = useState('None');
     const [patternScale, setPatternScale] = useState(1);
+    const [panelShape, setPanelShape] = useState('Rectangle');
     const [styles, setStyles] = useState([]);
 
     // Fetch style config
@@ -257,10 +258,14 @@ function LatticeCreator() {
                             <div className="mt-4">
                                 <label className="text-xs font-bold text-gray-500 mb-1 uppercase block">Shape</label>
                                 <div className="relative">
-                                    <select className="w-full appearance-none border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none cursor-pointer">
-                                        <option>Rectangle</option>
-                                        <option>Arch</option>
-                                        <option>Circle</option>
+                                    <select
+                                        value={panelShape}
+                                        onChange={(e) => setPanelShape(e.target.value)}
+                                        className="w-full appearance-none border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none cursor-pointer"
+                                    >
+                                        <option value="Rectangle">Rectangle</option>
+                                        <option value="Arch">Arch</option>
+                                        <option value="Circle">Circle</option>
                                     </select>
                                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                                 </div>
@@ -377,6 +382,7 @@ function LatticeCreator() {
 
                     <div className="w-full h-full cursor-move">
                         <Canvas
+                            gl={{ stencil: true }}
                             camera={{ position: [0, 0, 15], fov: 50 }}
                             onCreated={({ gl }) => {
                                 gl.localClippingEnabled = true;
@@ -399,6 +405,7 @@ function LatticeCreator() {
                                     styleModel={selectedStyle}
                                     materialColor={finish}
                                     patternScale={patternScale}
+                                    panelShape={panelShape}
                                 />
                             </Suspense>
 
