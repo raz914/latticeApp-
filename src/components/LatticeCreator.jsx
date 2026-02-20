@@ -160,6 +160,8 @@ const getThicknessOptions = (type) => {
                 { label: '1/4 inch', value: 0.25 },
                 { label: '3/8 inch', value: 0.375 },
                 { label: '1/2 inch', value: 0.5 },
+                { label: '3/4 inch', value: 0.75 },
+                { label: '1 inch', value: 1.0 },
             ];
         case 'Stainless Steel':
         case 'Mild Steel':
@@ -180,13 +182,13 @@ const getThicknessOptions = (type) => {
 };
 
 function LatticeCreator() {
-    const [width, setWidth] = useState(100);
-    const [height, setHeight] = useState(120);
+    const [width, setWidth] = useState(20);
+    const [height, setHeight] = useState(20);
     const [selectedStyle, setSelectedStyle] = useState('/styles/STYLE 1.glb');
     const [finish, setFinish] = useState('#5D4037'); // Wood brown
     const [materialType, setMaterialType] = useState('MDF');
-    const [thickness, setThickness] = useState(0.25);
-    const [borderSize, setBorderSize] = useState(1.5);
+    const [thickness, setThickness] = useState(0.75);
+    const [borderSize, setBorderSize] = useState(0.5);
     const [hangingOption, setHangingOption] = useState('None');
     const [patternScale, setPatternScale] = useState(1);
     const [panelShape, setPanelShape] = useState('Rectangle');
@@ -388,15 +390,18 @@ function LatticeCreator() {
                                 gl.localClippingEnabled = true;
                             }}
                         >
-                            <color attach="background" args={['#e8e8e8']} />
+                            <color
+                                attach="background"
+                                args={[finish === '#F5F5F5' ? '#333333' : '#e8e8e8']}
+                            />
 
                             {/* HDR Environment for realistic lighting - reduced intensity */}
-                            <Environment preset="studio" environmentIntensity={0.4} />
+                          {/* <Environment preset="warehouse" environmentIntensity={0.2} /> */}
 
                             {/* Subtle additional lighting */}
-                            <ambientLight intensity={0.15} />
-                            <directionalLight position={[5, 5, 5]} intensity={0.4} />
-                            <directionalLight position={[-5, 5, -5]} intensity={0.2} />
+                            <ambientLight intensity={3} />
+                            {/* <directionalLight position={[5, 5, 5]} intensity={0.4} /> */}
+                            {/* <directionalLight position={[-5, 5, -5]} intensity={0.2} /> */}
 
                             <Suspense fallback={<Loader />}>
                                 <LatticePanel
@@ -406,6 +411,8 @@ function LatticeCreator() {
                                     materialColor={finish}
                                     patternScale={patternScale}
                                     panelShape={panelShape}
+                                    thickness={thickness}
+                                    borderSize={borderSize}
                                 />
                             </Suspense>
 

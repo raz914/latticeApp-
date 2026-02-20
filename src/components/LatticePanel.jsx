@@ -3,8 +3,9 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
 const MDF_TEXTURE_PATH = '/texture/mdf.jpg';
-const FRAME_THICKNESS = 0.15;
-const FRAME_DEPTH = 0.12;
+// Constants removed in favor of dynamic props
+// const FRAME_THICKNESS = 0.15;
+// const FRAME_DEPTH = 0.12;
 
 function createArchShape(halfW, halfH) {
     const archRadius = halfW;
@@ -46,7 +47,16 @@ function createCircleHolePath(radius) {
     return hole;
 }
 
-const LatticePanel = ({ width, height, styleModel, materialColor, patternScale = 1, panelShape = 'Rectangle' }) => {
+const LatticePanel = ({
+    width,
+    height,
+    styleModel,
+    materialColor,
+    patternScale = 1,
+    panelShape = 'Rectangle',
+    thickness = 0.25, // Default thickness in inches
+    borderSize = 0.5, // Default border size in inches
+}) => {
     const groupRef = useRef();
     const [mdfTexture, setMdfTexture] = useState(null);
 
@@ -132,64 +142,74 @@ const LatticePanel = ({ width, height, styleModel, materialColor, patternScale =
     const tiledGroup = useMemo(() => {
         const group = new THREE.Group();
 
-        // Clone the original scene
+        // 1. Determine optimal orientation using the raw scene
+        const rawBox = new THREE.Box3().setFromObject(scene);
+        const rawSize = new THREE.Vector3();
+        rawBox.getSize(rawSize);
+
+        // If Y dimension is significantly smaller than Z, it's likely a "flat" model (laying on XZ).
+        // We want the pattern to face the camera (XY plane).
+        let rotX = 0;
+        if (rawSize.y < rawSize.z * 0.5) {
+            rotX = -Math.PI / 2;
+        } else if (rawSize.z < rawSize.y * 0.1) {
+            rotX = 0;
+        } else {
+            // Fallback: compare raw Y and Z.
+            rotX = rawSize.y < rawSize.z ? -Math.PI / 2 : 0;
+        }
+
+        // Clone for measurement with correction
         const originalClone = scene.clone(true);
-
-        // Rotate the model to face the camera (XY plane) - adjust based on model orientation
-        // Most 3D models are designed laying flat on XZ, so rotate -90 degrees on X
-        originalClone.rotation.x = -Math.PI / 2;
-
-        // Update the world matrix after rotation
+        originalClone.rotation.x = rotX;
         originalClone.updateMatrixWorld(true);
 
-        // Calculate the bounding box AFTER rotation
+        // 2. Measure corrected dimensions and center
         const bbox = new THREE.Box3().setFromObject(originalClone);
         const modelSize = new THREE.Vector3();
         bbox.getSize(modelSize);
-
-        // Get the center offset
         const modelCenter = new THREE.Vector3();
         bbox.getCenter(modelCenter);
 
-        // Unit dimensions (after rotation, X is width, Y is height)
+        // Target depth in scene units
+        const targetDepth = thickness / 10;
+
+        // Z is depth (after rotation).
+        const rawDepth = modelSize.z || 0;
+        const isFlat = rawDepth < 0.001;
+        const unitDepth = isFlat ? targetDepth : rawDepth;
+
+        // Unit dimensions (after rotation)
         const unitWidth = modelSize.x || 1;
         const unitHeight = modelSize.y || 1;
 
-        // Calculate tiles needed with scale adjustment
-        // Larger patternScale -> Larger tiles -> Fewer tiles needed
+        // Calculate tiles needed
         const tilesX = Math.max(1, Math.ceil(targetWidth / (unitWidth * patternScale)));
         const tilesY = Math.max(1, Math.ceil(targetHeight / (unitHeight * patternScale)));
 
-        // Use cover fit with a single scalar so XY proportions are always preserved.
-        const actualWidth = tilesX * unitWidth; // Note: actualWidth of the GRID (unscaled)
+        const actualWidth = tilesX * unitWidth;
         const actualHeight = tilesY * unitHeight;
-
-        // We want the grid (which is tilesX * unitWidth) to be scaled up/down to cover targetWidth.
-        // But we ALSO want to respect the user's requested scale relative to the target.
-        // Wait, the previous logic: scaleX = targetWidth / actualWidth.
-        // If we decrease tilesX (due to higher patternScale), actualWidth decreases.
-        // Then scaleX increases. So the whole group gets scaled up.
-        // This naturally achieves the "bigger pattern" effect.
 
         const scaleX = targetWidth / actualWidth;
         const scaleY = targetHeight / actualHeight;
-        // In the original code, uniformScale was Math.max(scaleX, scaleY) to cover completely.
-        // If we reduced tilesX based on patternScale, scaleX will be roughly `patternScale`.
         const uniformScale = Math.max(scaleX, scaleY);
 
         // Create the tiled grid
         for (let x = 0; x < tilesX; x++) {
             for (let y = 0; y < tilesY; y++) {
                 const tileClone = scene.clone(true);
-
-                // Apply rotation to each tile
-                tileClone.rotation.x = -Math.PI / 2;
+                tileClone.rotation.x = rotX;
 
                 // Position each tile in a grid
-                const posX = (x - (tilesX - 1) / 2) * unitWidth;
-                const posY = (y - (tilesY - 1) / 2) * unitHeight;
+                const gridX = (x - (tilesX - 1) / 2) * unitWidth;
+                const gridY = (y - (tilesY - 1) / 2) * unitHeight;
 
-                tileClone.position.set(posX, posY, 0);
+                // Apply centering correction
+                tileClone.position.set(
+                    gridX - modelCenter.x,
+                    gridY - modelCenter.y,
+                    -modelCenter.z
+                );
 
                 group.add(tileClone);
             }
@@ -198,19 +218,23 @@ const LatticePanel = ({ width, height, styleModel, materialColor, patternScale =
         // Center the group
         group.position.set(0, 0, 0);
 
-        // Apply a uniform scale to avoid stretching.
-        group.scale.set(uniformScale, uniformScale, 1);
+        // Calculate Z scale to match target thickness
+        const scaleZ = targetDepth / unitDepth;
+
+        group.scale.set(uniformScale, uniformScale, scaleZ);
 
         return group;
-    }, [scene, targetWidth, targetHeight, patternScale]);
+    }, [scene, targetWidth, targetHeight, patternScale, thickness]);
 
     // Build border frame matching the panel shape
     const frameGroup = useMemo(() => {
         const group = new THREE.Group();
         const halfW = targetWidth / 2;
         const halfH = targetHeight / 2;
-        const t = FRAME_THICKNESS;
-        const d = FRAME_DEPTH;
+
+        // Convert props to scene units (1 unit = 10 inches)
+        const t = borderSize / 10;
+        const d = thickness / 10;
 
         if (panelShape === 'Rectangle') {
             const bars = [
@@ -257,7 +281,7 @@ const LatticePanel = ({ width, height, styleModel, materialColor, patternScale =
         }
 
         return group;
-    }, [panelShape, targetWidth, targetHeight]);
+    }, [panelShape, targetWidth, targetHeight, borderSize, thickness]);
 
     // Apply material (MDF texture + color) to all meshes using PBR material
     useEffect(() => {
@@ -271,35 +295,81 @@ const LatticePanel = ({ width, height, styleModel, materialColor, patternScale =
 
                     // Generate box-projected UVs (always for frame meshes, otherwise only when missing)
                     if (geom && (!geom.attributes.uv || isFrame)) {
+                        // Ensure normals are computed for proper tri-planar projection
+                        if (!geom.attributes.normal) {
+                            geom.computeVertexNormals();
+                        }
+
                         const pos = geom.attributes.position;
+                        const nor = geom.attributes.normal;
                         const count = pos.count;
                         const uvs = new Float32Array(count * 2);
-                        const box = new THREE.Box3().setFromBufferAttribute(pos);
-                        const size = new THREE.Vector3();
-                        box.getSize(size);
 
-                        for (let i = 0; i < count; i++) {
-                            const x = pos.getX(i);
-                            const y = pos.getY(i);
-                            uvs[i * 2] = (x - box.min.x) / (size.x || 1);
-                            uvs[i * 2 + 1] = (y - box.min.y) / (size.y || 1);
+                        if (isFrame && nor) {
+                            // Use a uniform UV scale for all frame pieces so texture looks
+                            // identical on every bar regardless of its dimensions.
+                            const uvScale = 2.0; // UV repeats per scene unit
+                            for (let i = 0; i < count; i++) {
+                                const x = pos.getX(i);
+                                const y = pos.getY(i);
+                                const z = pos.getZ(i);
+
+                                // Tri-planar projection: pick UV axes based on dominant normal
+                                const nx = Math.abs(nor.getX(i));
+                                const ny = Math.abs(nor.getY(i));
+                                const nz = Math.abs(nor.getZ(i));
+
+                                if (nz >= nx && nz >= ny) {
+                                    // Front/back face → project on XY
+                                    uvs[i * 2] = x * uvScale;
+                                    uvs[i * 2 + 1] = y * uvScale;
+                                } else if (nx >= ny) {
+                                    // Left/right side face → project on YZ
+                                    uvs[i * 2] = z * uvScale;
+                                    uvs[i * 2 + 1] = y * uvScale;
+                                } else {
+                                    // Top/bottom face → project on XZ
+                                    uvs[i * 2] = x * uvScale;
+                                    uvs[i * 2 + 1] = z * uvScale;
+                                }
+                            }
+                        } else {
+                            // Non-frame meshes: simple XY projection normalised to mesh bounds
+                            const box = new THREE.Box3().setFromBufferAttribute(pos);
+                            const size = new THREE.Vector3();
+                            box.getSize(size);
+                            for (let i = 0; i < count; i++) {
+                                const x = pos.getX(i);
+                                const y = pos.getY(i);
+                                uvs[i * 2] = (x - box.min.x) / (size.x || 1);
+                                uvs[i * 2 + 1] = (y - box.min.y) / (size.y || 1);
+                            }
                         }
                         geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
                     }
 
+                    const baseColor = new THREE.Color(materialColor);
+
                     const baseProps = {
-                        color: new THREE.Color(materialColor),
+                        color: baseColor,
                         normalMap: mdfTexture || null,
                         normalScale: new THREE.Vector2(1, 1),
-                        metalness: 0.01,
-                        roughness: 0.9,
+                        metalness: 0.2,
+                        roughness: 1,
                         side: THREE.DoubleSide,
                         envMapIntensity: 0.7,
                     };
 
                     if (isFrame) {
                         child.renderOrder = 2;
-                        child.material = new THREE.MeshStandardMaterial(baseProps);
+                        // Make frame slightly lighter to match the panel/model appearance
+                        const frameColor = baseColor
+                            .clone()
+                            .lerp(new THREE.Color('#000000'), 0.05); // 6% toward white
+                        child.material = new THREE.MeshStandardMaterial({
+                            ...baseProps,
+                            color: frameColor
+                        });
                     } else if (panelShape === 'Rectangle') {
                         child.renderOrder = 0;
                         child.material = new THREE.MeshStandardMaterial({
