@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useEffect } from 'react';
+import React, { useState, Suspense, useEffect, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, Html } from '@react-three/drei';
 import {
@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import LatticePanel from './LatticePanel';
 import Navbar from './Navbar';
+import PricingModal from './PricingModal';
+import { calculatePriceBreakdown } from '../utils/pricing';
+import { downloadQuotePdf } from '../utils/quotePdf';
 
 // --- UI Components ---
 
@@ -193,6 +196,7 @@ function LatticeCreator() {
     const [patternScale, setPatternScale] = useState(1);
     const [panelShape, setPanelShape] = useState('Rectangle');
     const [styles, setStyles] = useState([]);
+    const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
 
     // Fetch style config
     useEffect(() => {
@@ -223,6 +227,43 @@ function LatticeCreator() {
         { name: 'Black Metal', color: '#212121' },
         { name: 'Forest Green', color: '#2E7D32' },
     ];
+
+    const selectedStyleName = useMemo(() => {
+        const selected = styles.find((style) => style.path === selectedStyle);
+        return selected?.name || selectedStyle;
+    }, [styles, selectedStyle]);
+
+    const pricingConfig = useMemo(() => ({
+        width,
+        height,
+        panelShape,
+        materialType,
+        thickness,
+        borderSize,
+        hangingOption,
+        styleName: selectedStyleName,
+    }), [
+        width,
+        height,
+        panelShape,
+        materialType,
+        thickness,
+        borderSize,
+        hangingOption,
+        selectedStyleName,
+    ]);
+
+    const priceBreakdown = useMemo(
+        () => calculatePriceBreakdown(pricingConfig),
+        [pricingConfig]
+    );
+
+    const handleDownloadQuote = () => {
+        downloadQuotePdf({
+            config: pricingConfig,
+            breakdown: priceBreakdown,
+        });
+    };
 
     return (
         <div className="flex flex-col h-screen bg-white text-gray-800 font-sans">
@@ -276,24 +317,26 @@ function LatticeCreator() {
 
                         <Section title="Pattern & Scaling" icon={Grid}>
                             <label className="text-xs font-bold text-gray-500 mb-2 uppercase block">Select Style</label>
-                            <div className="grid grid-cols-2 gap-3">
-                                {styles.map((style) => (
-                                    <StyleButton
-                                        key={style.path}
-                                        name={style.name}
-                                        path={style.path}
-                                        active={selectedStyle === style.path}
-                                        onClick={() => setSelectedStyle(style.path)}
-                                    />
-                                ))}
+                            <div className="max-h-[20rem] overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 custom-scrollbar">
+                                <div className="grid grid-cols-2 gap-3">
+                                    {styles.map((style) => (
+                                        <StyleButton
+                                            key={style.path}
+                                            name={style.name}
+                                            path={style.path}
+                                            active={selectedStyle === style.path}
+                                            onClick={() => setSelectedStyle(style.path)}
+                                        />
+                                    ))}
+                                </div>
                             </div>
                             <div className="mt-4">
                                 <label className="text-xs font-bold text-gray-500 mb-1 uppercase block">Pattern Scale</label>
                                 <input
                                     type="range"
-                                    min="0.5"
-                                    max="2"
-                                    step="0.1"
+                                    min="0.1"
+                                    max="0.5"
+                                    step="0.01"
                                     value={patternScale}
                                     onChange={(e) => setPatternScale(parseFloat(e.target.value))}
                                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
@@ -379,6 +422,13 @@ function LatticeCreator() {
                         <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Live Preview</h2>
                         <div className="space-x-2">
                             <button className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Reset View</button>
+                            <button
+                                type="button"
+                                onClick={() => setIsPriceModalOpen(true)}
+                                className="text-xs bg-blue-600 text-white border border-blue-700 px-3 py-1 rounded hover:bg-blue-700 transition-colors"
+                            >
+                                See Price
+                            </button>
                         </div>
                     </div>
 
@@ -435,6 +485,14 @@ function LatticeCreator() {
                     </div>
                 </section>
             </main>
+
+            <PricingModal
+                isOpen={isPriceModalOpen}
+                onClose={() => setIsPriceModalOpen(false)}
+                config={pricingConfig}
+                breakdown={priceBreakdown}
+                onDownloadPdf={handleDownloadQuote}
+            />
         </div>
     );
 }

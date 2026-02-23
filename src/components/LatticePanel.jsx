@@ -180,19 +180,29 @@ const LatticePanel = ({
         const unitDepth = isFlat ? targetDepth : rawDepth;
 
         // Unit dimensions (after rotation)
-        const unitWidth = modelSize.x || 1;
-        const unitHeight = modelSize.y || 1;
+        const EPSILON = 1e-6;
+        const unitWidth = Math.max(modelSize.x || 1, EPSILON);
+        const unitHeight = Math.max(modelSize.y || 1, EPSILON);
+        const safePatternScale = Number.isFinite(patternScale)
+            ? Math.max(patternScale, EPSILON)
+            : 1;
 
-        // Calculate tiles needed
-        const tilesX = Math.max(1, Math.ceil(targetWidth / (unitWidth * patternScale)));
-        const tilesY = Math.max(1, Math.ceil(targetHeight / (unitHeight * patternScale)));
+        // Calculate tiles needed from pattern-scaled unit size so larger pattern scales
+        // produce fewer/larger motifs while still covering the panel bounds.
+        const scaledUnitWidth = unitWidth * safePatternScale;
+        const scaledUnitHeight = unitHeight * safePatternScale;
+        const tilesX = Math.max(1, Math.ceil(targetWidth / Math.max(scaledUnitWidth, EPSILON)));
+        const tilesY = Math.max(1, Math.ceil(targetHeight / Math.max(scaledUnitHeight, EPSILON)));
 
-        const actualWidth = tilesX * unitWidth;
-        const actualHeight = tilesY * unitHeight;
+        const actualWidth = Math.max(tilesX * scaledUnitWidth, EPSILON);
+        const actualHeight = Math.max(tilesY * scaledUnitHeight, EPSILON);
 
-        const scaleX = targetWidth / actualWidth;
-        const scaleY = targetHeight / actualHeight;
-        const uniformScale = Math.max(scaleX, scaleY);
+        // Keep cover+clip behavior: choose the larger axis ratio so the tiled pattern
+        // always covers the panel, then apply the requested pattern scale.
+        const coverScaleX = targetWidth / actualWidth;
+        const coverScaleY = targetHeight / actualHeight;
+        const coverScale = Math.max(coverScaleX, coverScaleY);
+        const uniformScale = coverScale * safePatternScale;
 
         // Create the tiled grid
         for (let x = 0; x < tilesX; x++) {
