@@ -25,15 +25,16 @@ export function downloadQuotePdf({ config, breakdown }) {
     addRow(doc, 'Size', `${config.width}" x ${config.height}"`, 49);
     addRow(doc, 'Shape', config.panelShape, 55);
     addRow(doc, 'Material', config.materialType, 61);
-    addRow(doc, 'Thickness', `${config.thickness}"`, 67);
-    addRow(doc, 'Border', `${config.borderSize}"`, 73);
-    addRow(doc, 'Hanging', config.hangingOption, 79);
+    addRow(doc, 'Finish', config.finish || 'No Finish', 67);
+    addRow(doc, 'Thickness', `${config.thickness}"`, 73);
+    addRow(doc, 'Border', `${config.borderSize}"`, 79);
+    addRow(doc, 'Hanging', config.hangingOption, 85);
 
     doc.setFontSize(12);
-    doc.text('Price Breakdown', 14, 92);
+    doc.text('Price Breakdown', 14, 98);
     doc.setFontSize(10);
 
-    let y = 99;
+    let y = 105;
     breakdown.lineItems.forEach((item) => {
         addRow(doc, item.label, formatCurrency(item.amount), y);
         y += 6;

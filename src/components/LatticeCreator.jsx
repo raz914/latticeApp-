@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useEffect, useMemo } from 'react';
+import React, { useState, Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, Html } from '@react-three/drei';
 import {
@@ -11,7 +11,7 @@ import {
 import LatticePanel from './LatticePanel';
 import Navbar from './Navbar';
 import PricingModal from './PricingModal';
-import { calculatePriceBreakdown } from '../utils/pricing';
+import { calculatePriceBreakdown, formatCurrency } from '../utils/pricing';
 import { downloadQuotePdf } from '../utils/quotePdf';
 
 // --- UI Components ---
@@ -42,23 +42,34 @@ const InputGroup = ({
     unit,
     step = 1,
     min = 0,
+    max,
     showStepper = false,
 }) => {
+    const clampValue = (nextValue) => {
+        const lowerBounded = Math.max(min, nextValue);
+        return Number.isFinite(max) ? Math.min(max, lowerBounded) : lowerBounded;
+    };
+
     const handleInputChange = (e) => {
         const nextValue = Number(e.target.value);
         if (Number.isNaN(nextValue)) return;
-        onChange(nextValue);
+        onChange(clampValue(nextValue));
     };
 
     const handleBlur = () => {
-        if (value < min) {
+        if (!Number.isFinite(value)) {
             onChange(min);
+            return;
+        }
+        const clamped = clampValue(value);
+        if (clamped !== value) {
+            onChange(clamped);
         }
     };
 
     const adjustValue = (delta) => {
         const baseValue = Number.isFinite(value) ? value : min;
-        onChange(Math.max(min, baseValue + delta));
+        onChange(clampValue(baseValue + delta));
     };
 
     return (
@@ -69,6 +80,7 @@ const InputGroup = ({
                     type="number"
                     value={value}
                     min={min}
+                    max={max}
                     step={step}
                     onChange={handleInputChange}
                     onBlur={handleBlur}
@@ -150,8 +162,27 @@ const Loader = () => {
 
 // --- Main Component ---
 
-const materialTypes = ['MDF', 'Baltic Birch', 'Acrylic', 'Aluminum', 'Stainless Steel', 'Mild Steel'];
-const hangingOptions = ['None', 'Stand-offs', 'Keyhole Slots', 'Through Holes'];
+const materialTypes = ['MDF', 'Mild Steel', 'Baltic Birch', 'Acrylic', 'Stainless Steel', 'Aluminum'];
+const hangingOptions = [
+    'None',
+    'Direct Mount (Screws or Nails)',
+    'Standoff Mount (Floating Look)',
+    'Frame Mount (Pre-Framed Panel)',
+    'Rail or Cleat System (Hidden Mount)',
+    'Adhesive Mount',
+];
+const DEFAULT_CAMERA_CONFIG = Object.freeze({ position: [0, 0, 5], fov: 50 });
+const STRONG_ZOOM_IN_Z = 5;
+const STRONG_ZOOM_OUT_Z = 20;
+const ZOOM_IN_STYLE_IDS = new Set([
+    12, 13, 15, 17, 22, 48, 51, 57, 64, 65, 66, 68, 69, 70, 71, 72, 75, 76, 78, 79, 86, 87, 89, 91, 92, 118, 131,
+]);
+const ZOOM_OUT_STYLE_IDS = new Set([29]);
+
+const getStyleIdFromPath = (stylePath = '') => {
+    const match = stylePath.match(/STYLE\s+(\d+)\.glb$/i);
+    return match ? Number(match[1]) : null;
+};
 
 const getThicknessOptions = (type) => {
     switch (type) {
@@ -188,15 +219,22 @@ function LatticeCreator() {
     const [width, setWidth] = useState(20);
     const [height, setHeight] = useState(20);
     const [selectedStyle, setSelectedStyle] = useState('/styles/STYLE 1.glb');
-    const [finish, setFinish] = useState('#5D4037'); // Wood brown
+    const [finish, setFinish] = useState('No Finish');
     const [materialType, setMaterialType] = useState('MDF');
     const [thickness, setThickness] = useState(0.75);
-    const [borderSize, setBorderSize] = useState(0.5);
+    const [borderSize, setBorderSize] = useState(0.75);
     const [hangingOption, setHangingOption] = useState('None');
-    const [patternScale, setPatternScale] = useState(1);
+    const [patternSizePercent, setPatternSizePercent] = useState(50);
     const [panelShape, setPanelShape] = useState('Rectangle');
     const [styles, setStyles] = useState([]);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
+    const controlsRef = useRef(null);
+
+    const patternScale = useMemo(() => {
+        const safePercent = Math.min(100, Math.max(1, Number(patternSizePercent) || 50));
+        // UI shows 1–100%; logic minimum is 10% for render scale
+        return Math.max(0.1, safePercent / 100);
+    }, [patternSizePercent]);
 
     // Fetch style config
     useEffect(() => {
@@ -221,17 +259,30 @@ function LatticeCreator() {
     }, [materialType]);
 
     const finishes = [
-        { name: 'Wood', color: '#5D4037' },
-        { name: 'White Vinyl', color: '#F5F5F5' },
-        { name: 'Classic Grey', color: '#455A64' },
-        { name: 'Black Metal', color: '#212121' },
-        { name: 'Forest Green', color: '#2E7D32' },
+        { name: 'No Finish', value: 'No Finish', color: '#B08D57' },
+        { name: 'Black', value: 'Black', color: '#212121' },
+        { name: 'White', value: 'White', color: '#F5F5F5' },
     ];
+
+    const selectedFinishColor = finishes.find((item) => item.value === finish)?.color || '#B08D57';
 
     const selectedStyleName = useMemo(() => {
         const selected = styles.find((style) => style.path === selectedStyle);
         return selected?.name || selectedStyle;
     }, [styles, selectedStyle]);
+    const cameraConfig = useMemo(() => {
+        const styleId = getStyleIdFromPath(selectedStyle);
+
+        if (styleId && ZOOM_IN_STYLE_IDS.has(styleId)) {
+            return { position: [0, 0, STRONG_ZOOM_IN_Z], fov: DEFAULT_CAMERA_CONFIG.fov };
+        }
+
+        if (styleId && ZOOM_OUT_STYLE_IDS.has(styleId)) {
+            return { position: [0, 0, STRONG_ZOOM_OUT_Z], fov: DEFAULT_CAMERA_CONFIG.fov };
+        }
+
+        return DEFAULT_CAMERA_CONFIG;
+    }, [selectedStyle]);
 
     const pricingConfig = useMemo(() => ({
         width,
@@ -241,6 +292,7 @@ function LatticeCreator() {
         thickness,
         borderSize,
         hangingOption,
+        finish,
         styleName: selectedStyleName,
     }), [
         width,
@@ -250,6 +302,7 @@ function LatticeCreator() {
         thickness,
         borderSize,
         hangingOption,
+        finish,
         selectedStyleName,
     ]);
 
@@ -286,6 +339,7 @@ function LatticeCreator() {
                                     unit="inch"
                                     step={10}
                                     min={10}
+                                    max={47}
                                     showStepper
                                 />
                                 <InputGroup
@@ -295,6 +349,7 @@ function LatticeCreator() {
                                     unit="inch"
                                     step={10}
                                     min={10}
+                                    max={95}
                                     showStepper
                                 />
                             </div>
@@ -331,16 +386,34 @@ function LatticeCreator() {
                                 </div>
                             </div>
                             <div className="mt-4">
-                                <label className="text-xs font-bold text-gray-500 mb-1 uppercase block">Pattern Scale</label>
-                                <input
-                                    type="range"
-                                    min="0.1"
-                                    max="0.5"
-                                    step="0.01"
-                                    value={patternScale}
-                                    onChange={(e) => setPatternScale(parseFloat(e.target.value))}
-                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                                />
+                                <label className="text-xs font-bold text-gray-500 mb-1 uppercase block">Pattern Size</label>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="range"
+                                        min="1"
+                                        max="100"
+                                        step="1"
+                                        value={patternSizePercent}
+                                        onChange={(e) => setPatternSizePercent(Number(e.target.value))}
+                                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                    />
+                                    <div className="relative w-24">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="100"
+                                            step="1"
+                                            value={patternSizePercent}
+                                            onChange={(e) => {
+                                                const nextValue = Number(e.target.value);
+                                                if (Number.isNaN(nextValue)) return;
+                                                setPatternSizePercent(Math.min(100, Math.max(1, nextValue)));
+                                            }}
+                                            className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-7"
+                                        />
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                                    </div>
+                                </div>
                             </div>
                         </Section>
 
@@ -367,10 +440,10 @@ function LatticeCreator() {
                                     <div className="flex flex-wrap gap-3">
                                         {finishes.map((f) => (
                                             <ColorOption
-                                                key={f.name}
+                                                key={f.value}
                                                 {...f}
-                                                active={finish === f.color}
-                                                onClick={() => setFinish(f.color)}
+                                                active={finish === f.value}
+                                                onClick={() => setFinish(f.value)}
                                             />
                                         ))}
                                     </div>
@@ -393,7 +466,14 @@ function LatticeCreator() {
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
-                                    <InputGroup label="Border Size" value={borderSize} onChange={setBorderSize} unit="inch" />
+                                    <InputGroup
+                                        label="Border Size"
+                                        value={borderSize}
+                                        onChange={setBorderSize}
+                                        unit="inch"
+                                        min={0.25}
+                                        step={0.25}
+                                    />
 
                                     <div>
                                         <label className="text-xs font-bold text-gray-500 mb-1 uppercase block">Hanging Options</label>
@@ -420,14 +500,26 @@ function LatticeCreator() {
                 <section className="flex-1 relative bg-gradient-to-br from-gray-100 to-gray-200 order-1 md:order-2 h-1/2 md:h-auto">
                     <div className="absolute top-0 left-0 right-0 p-3 bg-white/80 backdrop-blur border-b border-gray-200 z-10 flex justify-between items-center shadow-sm">
                         <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Live Preview</h2>
-                        <div className="space-x-2">
-                            <button className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Reset View</button>
+                        <div className="flex items-center gap-3">
+                            <div className="px-3 py-1 rounded bg-white border border-gray-300">
+                                <span className="text-xs text-gray-500 uppercase tracking-wide mr-2">Total</span>
+                                <span className="text-sm font-semibold text-gray-800">
+                                    {formatCurrency(priceBreakdown?.total || 0)}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => controlsRef.current?.reset()}
+                                className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors"
+                            >
+                                Reset View
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => setIsPriceModalOpen(true)}
                                 className="text-xs bg-blue-600 text-white border border-blue-700 px-3 py-1 rounded hover:bg-blue-700 transition-colors"
                             >
-                                See Price
+                                See Pricing Breakdown
                             </button>
                         </div>
                     </div>
@@ -435,14 +527,14 @@ function LatticeCreator() {
                     <div className="w-full h-full cursor-move">
                         <Canvas
                             gl={{ stencil: true }}
-                            camera={{ position: [0, 0, 15], fov: 50 }}
+                            camera={cameraConfig}
                             onCreated={({ gl }) => {
                                 gl.localClippingEnabled = true;
                             }}
                         >
                             <color
                                 attach="background"
-                                args={[finish === '#F5F5F5' ? '#333333' : '#e8e8e8']}
+                                args={[selectedFinishColor === '#F5F5F5' ? '#333333' : '#e8e8e8']}
                             />
 
                             {/* HDR Environment for realistic lighting - reduced intensity */}
@@ -458,7 +550,7 @@ function LatticeCreator() {
                                     width={width}
                                     height={height}
                                     styleModel={selectedStyle}
-                                    materialColor={finish}
+                                    materialColor={selectedFinishColor}
                                     patternScale={patternScale}
                                     panelShape={panelShape}
                                     thickness={thickness}
@@ -467,6 +559,7 @@ function LatticeCreator() {
                             </Suspense>
 
                             <OrbitControls
+                                ref={controlsRef}
                                 makeDefault
                                 enablePan={true}
                                 enableZoom={true}

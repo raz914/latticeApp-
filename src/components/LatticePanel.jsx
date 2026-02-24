@@ -194,15 +194,8 @@ const LatticePanel = ({
         const tilesX = Math.max(1, Math.ceil(targetWidth / Math.max(scaledUnitWidth, EPSILON)));
         const tilesY = Math.max(1, Math.ceil(targetHeight / Math.max(scaledUnitHeight, EPSILON)));
 
-        const actualWidth = Math.max(tilesX * scaledUnitWidth, EPSILON);
-        const actualHeight = Math.max(tilesY * scaledUnitHeight, EPSILON);
-
-        // Keep cover+clip behavior: choose the larger axis ratio so the tiled pattern
-        // always covers the panel, then apply the requested pattern scale.
-        const coverScaleX = targetWidth / actualWidth;
-        const coverScaleY = targetHeight / actualHeight;
-        const coverScale = Math.max(coverScaleX, coverScaleY);
-        const uniformScale = coverScale * safePatternScale;
+        // Apply requested XY scale directly for smooth slider response across full range.
+        const uniformScale = safePatternScale;
 
         // Create the tiled grid
         for (let x = 0; x < tilesX; x++) {

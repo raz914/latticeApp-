@@ -55,6 +55,7 @@ function PricingModal({ isOpen, onClose, config, breakdown, onDownloadPdf }) {
                             <p><span className="font-medium">Size:</span> {config.width}" x {config.height}"</p>
                             <p><span className="font-medium">Shape:</span> {config.panelShape}</p>
                             <p><span className="font-medium">Material:</span> {config.materialType}</p>
+                            <p><span className="font-medium">Finish:</span> {config.finish || 'No Finish'}</p>
                             <p><span className="font-medium">Thickness:</span> {config.thickness}"</p>
                             <p><span className="font-medium">Border:</span> {config.borderSize}"</p>
                             <p><span className="font-medium">Hanging:</span> {config.hangingOption}</p>
