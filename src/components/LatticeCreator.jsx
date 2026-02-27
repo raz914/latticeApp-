@@ -45,31 +45,48 @@ const InputGroup = ({
     max,
     showStepper = false,
 }) => {
+    const [localValue, setLocalValue] = useState(String(value));
+    const [isFocused, setIsFocused] = useState(false);
+
+    // Sync local value from parent when not focused
+    useEffect(() => {
+        if (!isFocused) {
+            setLocalValue(String(value));
+        }
+    }, [value, isFocused]);
+
     const clampValue = (nextValue) => {
         const lowerBounded = Math.max(min, nextValue);
         return Number.isFinite(max) ? Math.min(max, lowerBounded) : lowerBounded;
     };
 
     const handleInputChange = (e) => {
-        const nextValue = Number(e.target.value);
-        if (Number.isNaN(nextValue)) return;
-        onChange(clampValue(nextValue));
+        // Allow free typing without clamping
+        setLocalValue(e.target.value);
+    };
+
+    const handleFocus = () => {
+        setIsFocused(true);
     };
 
     const handleBlur = () => {
-        if (!Number.isFinite(value)) {
+        setIsFocused(false);
+        const nextValue = Number(localValue);
+        if (Number.isNaN(nextValue) || localValue.trim() === '') {
             onChange(min);
+            setLocalValue(String(min));
             return;
         }
-        const clamped = clampValue(value);
-        if (clamped !== value) {
-            onChange(clamped);
-        }
+        const clamped = clampValue(nextValue);
+        onChange(clamped);
+        setLocalValue(String(clamped));
     };
 
     const adjustValue = (delta) => {
         const baseValue = Number.isFinite(value) ? value : min;
-        onChange(clampValue(baseValue + delta));
+        const newVal = clampValue(baseValue + delta);
+        onChange(newVal);
+        setLocalValue(String(newVal));
     };
 
     return (
@@ -78,11 +95,12 @@ const InputGroup = ({
             <div className="relative flex items-center">
                 <input
                     type="number"
-                    value={value}
+                    value={localValue}
                     min={min}
                     max={max}
                     step={step}
                     onChange={handleInputChange}
+                    onFocus={handleFocus}
                     onBlur={handleBlur}
                     className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${showStepper ? 'pr-16' : ''}`}
                 />
@@ -538,7 +556,7 @@ function LatticeCreator() {
                             />
 
                             {/* HDR Environment for realistic lighting - reduced intensity */}
-                          {/* <Environment preset="warehouse" environmentIntensity={0.2} /> */}
+                            {/* <Environment preset="warehouse" environmentIntensity={0.2} /> */}
 
                             {/* Subtle additional lighting */}
                             <ambientLight intensity={3} />
