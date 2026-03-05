@@ -158,7 +158,10 @@ const ColorOption = ({ color, name, active, onClick }) => (
         className={`group relative w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all ${active ? 'border-blue-500 scale-110 shadow-md' : 'border-transparent hover:scale-105'
             }`}
     >
-        <div className="w-8 h-8 rounded-full shadow-inner" style={{ backgroundColor: color }} />
+        <div
+            className={`w-8 h-8 rounded-full shadow-inner ${color?.toUpperCase() === '#FEFEFE' || color?.toUpperCase() === '#FFFFFF' ? 'border border-gray-300' : ''}`}
+            style={{ backgroundColor: color }}
+        />
         <span className="absolute -bottom-6 bg-gray-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
             {name}
         </span>
@@ -181,6 +184,22 @@ const Loader = () => {
 // --- Main Component ---
 
 const materialTypes = ['MDF', 'Mild Steel', 'Baltic Birch', 'Acrylic', 'Stainless Steel', 'Aluminum'];
+const MATERIAL_METAL_TYPES = new Set(['Mild Steel', 'Stainless Steel', 'Aluminum']);
+const FINISH_NO_FINISH = 'No Finish';
+const FINISH_BLACK = 'Black';
+const FINISH_WHITE = 'White';
+const BASE_FINISH_OPTIONS = [
+    { name: FINISH_NO_FINISH, value: FINISH_NO_FINISH },
+    { name: FINISH_BLACK, value: FINISH_BLACK },
+    { name: FINISH_WHITE, value: FINISH_WHITE },
+];
+const COLOR_MATRIX = {
+    MDF: { faceColor: '#D8D6BB', edgeColor: '#403916' },
+    'Baltic Birch': { faceColor: '#F7E8D3', edgeColor: '#8C755C' },
+    Metal: { faceColor: '#D6D1CF', edgeColor: '#B0AFAB' },
+    Black: { faceColor: '#4B4B4D', edgeColor: '#666666' },
+    White: { faceColor: '#FEFEFE', edgeColor: '#E6E7E8' },
+};
 const hangingOptions = [
     'None',
     'Direct Mount (Screws or Nails)',
@@ -200,6 +219,19 @@ const ZOOM_OUT_STYLE_IDS = new Set([29]);
 const getStyleIdFromPath = (stylePath = '') => {
     const match = stylePath.match(/STYLE\s+(\d+)\.glb$/i);
     return match ? Number(match[1]) : null;
+};
+
+const getNoFinishPaletteByMaterial = (materialType) => {
+    if (materialType === 'MDF') return COLOR_MATRIX.MDF;
+    if (materialType === 'Baltic Birch') return COLOR_MATRIX['Baltic Birch'];
+    if (MATERIAL_METAL_TYPES.has(materialType) || materialType === 'Acrylic') return COLOR_MATRIX.Metal;
+    return COLOR_MATRIX.MDF;
+};
+
+const getResolvedFinishColors = (materialType, finish) => {
+    if (finish === FINISH_BLACK) return COLOR_MATRIX.Black;
+    if (finish === FINISH_WHITE) return COLOR_MATRIX.White;
+    return getNoFinishPaletteByMaterial(materialType);
 };
 
 const getThicknessOptions = (type) => {
@@ -247,6 +279,7 @@ function LatticeCreator() {
     const [styles, setStyles] = useState([]);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const controlsRef = useRef(null);
+    const previewCanvasRef = useRef(null);
 
     const patternScale = useMemo(() => {
         const safePercent = Math.min(100, Math.max(1, Number(patternSizePercent) || 50));
@@ -276,13 +309,27 @@ function LatticeCreator() {
         }
     }, [materialType]);
 
-    const finishes = [
-        { name: 'No Finish', value: 'No Finish', color: '#B08D57' },
-        { name: 'Black', value: 'Black', color: '#212121' },
-        { name: 'White', value: 'White', color: '#F5F5F5' },
-    ];
+    const finishes = useMemo(() => {
+        const supported = materialType === 'Acrylic'
+            ? BASE_FINISH_OPTIONS.filter((option) => option.value !== FINISH_NO_FINISH)
+            : BASE_FINISH_OPTIONS;
+        return supported.map((option) => ({
+            ...option,
+            color: getResolvedFinishColors(materialType, option.value).faceColor,
+        }));
+    }, [materialType]);
 
-    const selectedFinishColor = finishes.find((item) => item.value === finish)?.color || '#B08D57';
+    useEffect(() => {
+        if (materialType !== 'Acrylic') return;
+        if (finish === FINISH_NO_FINISH) {
+            setFinish(FINISH_BLACK);
+        }
+    }, [materialType, finish]);
+
+    const { faceColor: resolvedFaceColor, edgeColor: resolvedEdgeColor } = useMemo(
+        () => getResolvedFinishColors(materialType, finish),
+        [materialType, finish]
+    );
 
     const selectedStyleName = useMemo(() => {
         const selected = styles.find((style) => style.path === selectedStyle);
@@ -312,6 +359,9 @@ function LatticeCreator() {
         hangingOption,
         finish,
         styleName: selectedStyleName,
+        panelScalePercent: patternSizePercent,
+        faceColorHex: resolvedFaceColor,
+        edgeColorHex: resolvedEdgeColor,
     }), [
         width,
         height,
@@ -322,6 +372,9 @@ function LatticeCreator() {
         hangingOption,
         finish,
         selectedStyleName,
+        patternSizePercent,
+        resolvedFaceColor,
+        resolvedEdgeColor,
     ]);
 
     const priceBreakdown = useMemo(
@@ -330,9 +383,18 @@ function LatticeCreator() {
     );
 
     const handleDownloadQuote = () => {
+        let previewImageDataUrl;
+
+        try {
+            previewImageDataUrl = previewCanvasRef.current?.toDataURL('image/png');
+        } catch (error) {
+            console.warn('Unable to capture preview image for PDF export.', error);
+        }
+
         downloadQuotePdf({
             config: pricingConfig,
             breakdown: priceBreakdown,
+            previewImageDataUrl,
         });
     };
 
@@ -544,16 +606,15 @@ function LatticeCreator() {
 
                     <div className="w-full h-full cursor-move">
                         <Canvas
-                            gl={{ stencil: true }}
+                            gl={{ stencil: true, preserveDrawingBuffer: true }}
                             camera={cameraConfig}
                             onCreated={({ gl }) => {
                                 gl.localClippingEnabled = true;
+                                previewCanvasRef.current = gl.domElement;
                             }}
-                        >
-                            <color
-                                attach="background"
-                                args={[selectedFinishColor === '#F5F5F5' ? '#333333' : '#e8e8e8']}
-                            />
+                        > 
+                        {/* Background col#afacac #484848  */  }
+                            <color attach="background" args={['#e8e8e8']} />
 
                             {/* HDR Environment for realistic lighting - reduced intensity */}
                             {/* <Environment preset="warehouse" environmentIntensity={0.2} /> */}
@@ -568,7 +629,8 @@ function LatticeCreator() {
                                     width={width}
                                     height={height}
                                     styleModel={selectedStyle}
-                                    materialColor={selectedFinishColor}
+                                    faceColor={resolvedFaceColor}
+                                    edgeColor={resolvedEdgeColor}
                                     patternScale={patternScale}
                                     panelShape={panelShape}
                                     thickness={thickness}

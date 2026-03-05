@@ -45,8 +45,8 @@ const PRICING_CONFIG = {
             baseRatePerSqFt: 32.92,
             addonRates: {
                 0.0478: 0,
-                0.0747: 8.55,
-                0.1046: 17.06,
+                0.0747: 17.1,
+                0.1046: 34.12,
             },
         },
         Aluminum: {
@@ -73,7 +73,7 @@ const PRICING_CONFIG = {
     largeItemFees: {
         midTierMinSqFt: 10,
         midTierMaxSqFt: 15,
-        midTierFee: 150,
+        midTierFee: 250,
         highTierFee: 400,
     },
 };

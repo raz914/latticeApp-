@@ -51,7 +51,8 @@ const LatticePanel = ({
     width,
     height,
     styleModel,
-    materialColor,
+    faceColor,
+    edgeColor,
     patternScale = 1,
     panelShape = 'Rectangle',
     thickness = 0.25, // Default thickness in inches
@@ -351,10 +352,11 @@ const LatticePanel = ({
                         geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
                     }
 
-                    const baseColor = new THREE.Color(materialColor);
+                    const panelColor = new THREE.Color(faceColor);
+                    const frameColor = new THREE.Color(edgeColor);
 
                     const baseProps = {
-                        color: baseColor,
+                        color: panelColor,
                         normalMap: mdfTexture || null,
                         normalScale: new THREE.Vector2(1, 1),
                         metalness: 0.2,
@@ -365,10 +367,6 @@ const LatticePanel = ({
 
                     if (isFrame) {
                         child.renderOrder = 2;
-                        // Make frame slightly lighter to match the panel/model appearance
-                        const frameColor = baseColor
-                            .clone()
-                            .lerp(new THREE.Color('#000000'), 0.05); // 6% toward white
                         child.material = new THREE.MeshStandardMaterial({
                             ...baseProps,
                             color: frameColor
@@ -395,7 +393,7 @@ const LatticePanel = ({
                 }
             });
         }
-    }, [materialColor, mdfTexture, tiledGroup, frameGroup, clippingPlanes, panelShape, clipMask]);
+    }, [faceColor, edgeColor, mdfTexture, tiledGroup, frameGroup, clippingPlanes, panelShape, clipMask]);
 
     return (
         <group ref={groupRef}>
