@@ -369,7 +369,7 @@ const LatticePanel = ({
                         child.renderOrder = 2;
                         child.material = new THREE.MeshStandardMaterial({
                             ...baseProps,
-                            color: frameColor
+                            color: panelColor
                         });
                     } else if (panelShape === 'Rectangle') {
                         child.renderOrder = 0;
