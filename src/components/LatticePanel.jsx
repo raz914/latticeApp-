@@ -7,27 +7,41 @@ const MDF_TEXTURE_PATH = '/texture/mdf.jpg';
 // const FRAME_THICKNESS = 0.15;
 // const FRAME_DEPTH = 0.12;
 
-function createArchShape(halfW, halfH) {
-    const archRadius = halfW;
-    const archCenterY = halfH - archRadius;
+function appendArchOutline(path, halfW, halfH, padding = 0) {
+    const isWideArch = halfW > halfH;
+    const bottomY = -(halfH + padding);
+    const sideHalfW = halfW + padding;
+
+    path.moveTo(-sideHalfW, bottomY);
+    path.lineTo(sideHalfW, bottomY);
+
+    // Preserve the legacy circular cap when it fits the requested box.
+    // Wider arches would self-intersect, so switch to a half-ellipse that
+    // still spans the exact width/height bounds without invalid geometry.
+    if (isWideArch) {
+        const ellipseHeight = (halfH + padding) * 2;
+        path.absellipse(0, bottomY, sideHalfW, ellipseHeight, 0, Math.PI, false, 0);
+        return { isWideArch, bottomY, sideHalfW };
+    }
+
+    const archRadius = halfW + padding;
+    const archCenterY = halfH - halfW;
+    path.lineTo(sideHalfW, archCenterY);
+    path.absarc(0, archCenterY, archRadius, 0, Math.PI, false);
+    return { isWideArch, archRadius, archCenterY, bottomY, sideHalfW };
+}
+
+function createArchShape(halfW, halfH, padding = 0) {
     const shape = new THREE.Shape();
-    shape.moveTo(-halfW, -halfH);
-    shape.lineTo(halfW, -halfH);
-    shape.lineTo(halfW, archCenterY);
-    shape.absarc(0, archCenterY, archRadius, 0, Math.PI, false);
-    shape.lineTo(-halfW, -halfH);
+    const meta = appendArchOutline(shape, halfW, halfH, padding);
+    shape.lineTo(-(halfW + padding), -(halfH + padding));
     shape.closePath();
-    return { shape, archRadius, archCenterY };
+    return { shape, ...meta };
 }
 
 function createArchHolePath(halfW, halfH) {
-    const archRadius = halfW;
-    const archCenterY = halfH - archRadius;
     const hole = new THREE.Path();
-    hole.moveTo(-halfW, -halfH);
-    hole.lineTo(halfW, -halfH);
-    hole.lineTo(halfW, archCenterY);
-    hole.absarc(0, archCenterY, archRadius, 0, Math.PI, false);
+    appendArchOutline(hole, halfW, halfH);
     hole.lineTo(-halfW, -halfH);
     hole.closePath();
     return hole;
@@ -117,7 +131,7 @@ const LatticePanel = ({
             geometry = new THREE.ShapeGeometry(createCircleShape(radius), 64);
         } else if (panelShape === 'Arch') {
             const { shape } = createArchShape(targetWidth / 2, targetHeight / 2);
-            geometry = new THREE.ShapeGeometry(shape);
+            geometry = new THREE.ShapeGeometry(shape, 96);
         }
         if (!geometry) return null;
         const material = new THREE.MeshBasicMaterial({
@@ -266,15 +280,7 @@ const LatticePanel = ({
             mesh.userData.isFrame = true;
             group.add(mesh);
         } else if (panelShape === 'Arch') {
-            const { archRadius, archCenterY } = createArchShape(halfW, halfH);
-            const outerHalfW = halfW + t;
-            const outerArchRadius = archRadius + t;
-            const outerShape = new THREE.Shape();
-            outerShape.moveTo(-outerHalfW, -(halfH + t));
-            outerShape.lineTo(outerHalfW, -(halfH + t));
-            outerShape.lineTo(outerHalfW, archCenterY);
-            outerShape.absarc(0, archCenterY, outerArchRadius, 0, Math.PI, false);
-            outerShape.lineTo(-outerHalfW, -(halfH + t));
+            const { shape: outerShape } = createArchShape(halfW, halfH, t);
             outerShape.holes.push(createArchHolePath(halfW, halfH));
             const geo = new THREE.ExtrudeGeometry(outerShape, { depth: d, bevelEnabled: false });
             geo.translate(0, 0, -d / 2);
